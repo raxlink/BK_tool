@@ -2205,26 +2205,90 @@ function exportExcel() {
   log('Generating export file…', 'info');
 
   const wb = XLSX.utils.book_new();
-  const headers = ["PRIORITY","CATEGORY","CS_TITLE","COURT_ID","CS_CHAPTER","CS_DATE_FILED","NOS","CASE_LINK","NATURE_OF_DEBT","TYPE_OF_DEBTOR"];
-  const rows = [headers, ...processedRows.map(r => [
-    "", "", r.company, r.courtId, r.chapter, r.dateFiled, r.caseNo,
-    r.hyperlink ? r.hyperlink : "",
-    "Business", "Corporation"
-  ])];
 
-  const ws = XLSX.utils.aoa_to_sheet(rows);
+  // ── Header row ─────────────────────────────────────────────────────────────
+  const HEADERS = [
+    "PRIORITY","CATEGORY","CS_TITLE","COURT_ID","CS_CHAPTER",
+    "CS_DATE_FILED","NOS","CASE_LINK","NATURE_OF_DEBT","TYPE_OF_DEBTOR"
+  ];
 
-  // Column widths
+  // ── Build sheet manually so we can set cell types precisely ───────────────
+  const ws = {};
+  const R = processedRows.length;
+
+  // Write headers (row 1)
+  HEADERS.forEach((h, ci) => {
+    const addr = XLSX.utils.encode_cell({r: 0, c: ci});
+    ws[addr] = { v: h, t: 's' };
+  });
+
+  // Write data rows
+  processedRows.forEach((row, ri) => {
+    const r = ri + 1; // 1-indexed, row 0 = headers
+
+    // A: PRIORITY (blank)
+    ws[XLSX.utils.encode_cell({r, c:0})] = { v: '', t: 's' };
+    // B: CATEGORY (blank)
+    ws[XLSX.utils.encode_cell({r, c:1})] = { v: '', t: 's' };
+    // C: CS_TITLE
+    ws[XLSX.utils.encode_cell({r, c:2})] = { v: row.company || '', t: 's' };
+    // D: COURT_ID
+    ws[XLSX.utils.encode_cell({r, c:3})] = { v: row.courtId || '', t: 's' };
+    // E: CS_CHAPTER — stored as text string (e.g. "11")
+    ws[XLSX.utils.encode_cell({r, c:4})] = { v: row.chapter || '', t: 's' };
+    // F: CS_DATE_FILED — string MM/DD/YYYY, number_format dd-mm-yyyy
+    ws[XLSX.utils.encode_cell({r, c:5})] = {
+      v: row.dateFiled || '',
+      t: 's',
+      z: 'dd\\-mm\\-yyyy'
+    };
+    // G: NOS (case number)
+    ws[XLSX.utils.encode_cell({r, c:6})] = { v: row.caseNo || '', t: 's' };
+    // H: CASE_LINK — =HYPERLINK formula (Excel auto-applies blue hyperlink style)
+    if (row.hyperlink) {
+      ws[XLSX.utils.encode_cell({r, c:7})] = {
+        f: `HYPERLINK("${row.hyperlink}","View petition")`,
+        t: 's',
+        v: 'View petition'
+      };
+    } else {
+      ws[XLSX.utils.encode_cell({r, c:7})] = { v: '', t: 's' };
+    }
+    // I: NATURE_OF_DEBT
+    ws[XLSX.utils.encode_cell({r, c:8})] = { v: 'Business', t: 's' };
+    // J: TYPE_OF_DEBTOR
+    ws[XLSX.utils.encode_cell({r, c:9})] = { v: 'Corporation', t: 's' };
+  });
+
+  // Sheet ref range
+  ws['!ref'] = XLSX.utils.encode_range({ r: 0, c: 0 }, { r: R, c: 9 });
+
+  // ── Exact column widths from reference file (openpyxl units → wch) ─────────
   ws['!cols'] = [
-    {wch:10},{wch:12},{wch:40},{wch:16},{wch:10},{wch:14},{wch:28},{wch:50},{wch:14},{wch:14}
+    { wch: 8.54  },  // A: PRIORITY
+    { wch: 9.82  },  // B: CATEGORY
+    { wch: 46.09 },  // C: CS_TITLE
+    { wch: 9.45  },  // D: COURT_ID
+    { wch: 11.54 },  // E: CS_CHAPTER
+    { wch: 13.91 },  // F: CS_DATE_FILED
+    { wch: 13.45 },  // G: NOS
+    { wch: 12.63 },  // H: CASE_LINK
+    { wch: 16.45 },  // I: NATURE_OF_DEBT
+    { wch: 16.0  },  // J: TYPE_OF_DEBTOR
   ];
 
   XLSX.utils.book_append_sheet(wb, ws, "Filtered Data");
 
+  // ── Filename: BK + MonDDYYYY ───────────────────────────────────────────────
   const now = new Date();
-  const dateStr = now.toLocaleDateString('en-US',{month:'short',day:'2-digit',year:'numeric'}).replace(/ /g,'');
-  XLSX.writeFile(wb, `BK${dateStr}.xlsx`);
-  log(`Exported BK${dateStr}.xlsx (${processedRows.length} rows)`, 'success');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const dd = String(now.getDate()).padStart(2,'0');
+  const mon = months[now.getMonth()];
+  const yyyy = now.getFullYear();
+  const fileName = `BK${mon}${dd}${yyyy}.xlsx`;
+
+  XLSX.writeFile(wb, fileName);
+  log(`Exported ${fileName} — ${processedRows.length} rows, sheet "Filtered Data"`, 'success');
 }
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
